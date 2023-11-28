@@ -1,5 +1,10 @@
+#!/bin/env python3
+
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+
+from cmp.services.accommodation.v1alpha1 import *
+from cmp.types.v1alpha1 import *
 
 def strip_ns(tag):
     """
@@ -30,6 +35,45 @@ def xml_to_dict_with_attributes(element):
 
     return dict(d)
 
+def get_room_hotel_code(room):
+    return room["BasicPropertyInfo"]["HotelCode"]
+def get_room_type_code(room):
+    return room["RoomTypes"]["RoomType"]["RoomTypeCode"]
+def get_room_price(room):
+    return room["RoomRates"]["RoomRate"]["Rates"]["Rate"]["Total"]["AmountAfterTax"]
+def get_room_price_currency(room):
+    return room["RoomRates"]["RoomRate"]["Rates"]["Rate"]["Total"]["CurrencyCode"]
+def get_room_rate_plan(room):
+    return room["RoomRates"]["RoomRate"]["Rates"]["Rate"]["ChargeType"]
+def get_room_rate_feature(room):
+    rate_feature = room["RoomRates"]["RoomRate"]["Features"]["Feature"]["Description"]["Text"]["text"]
+    collect_features(rate_feature)
+    return rate_feature
+
+def get_rate_rule_from_feature(feature):
+    """
+    Return RateRule type from a feature id of MTS
+
+    Features: ['BB', 'HB', 'AI', 'RO', 'HB+', 'SC', 'FB', 'AI+', 'FB+']
+    """
+    if feature in ["BB","BB+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_NON_REFUNDABLE)
+    elif feature in ["HB","HB+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_FLEXIBLE)
+    elif feature in ["SC","SC+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_FLEXIBLE)
+    elif feature in ["AI","AI+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_RESELLABLE)
+    elif feature in ["RO","RO+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_SEMI_NON_REFUNDABLE)
+    elif feature in ["FB","FB+"]:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_SEMI_NON_REFUNDABLE)
+    else:
+        return RateRule(rate_type = RateRuleType.RATE_RULE_TYPE_NON_REFUNDABLE)
+
+def get_room_rate_rule(room):
+    return get_rate_rule_from_feature(get_room_rate_feature(room))
+
 def get_rooms_of_hotel(hotel_code, rooms_list):
     """
     Loops over the given list to find rooms of the hotel.
@@ -38,26 +82,108 @@ def get_rooms_of_hotel(hotel_code, rooms_list):
     hotel_rooms = []
 
     for room in rooms_list:
-        if room["BasicPropertyInfo"]["HotelCode"] == hotel_code:
+        if get_room_hotel_code(room) == hotel_code:
             hotel_rooms.append(room)
 
     return hotel_rooms
+
+def print_rooms_info(rooms_list):
+    """
+    Print rooms info
+    """
+    for room in rooms_list:
+        room_type_code = get_room_type_code(room)
+        room_total_price = get_room_price(room)
+        room_total_price_currency = get_room_price_currency(room)
+        room_rate_feature = get_room_rate_feature(room)
+
+        info = f"\t - {room_type_code}: \t{room_total_price_currency}{room_total_price} - Feature: {room_rate_feature}"
+
+        print(info)
+
+def get_hotel_code(hotel):
+    return hotel["BasicPropertyInfo"]["HotelCode"]
+def get_hotel_name(hotel):
+    return hotel["BasicPropertyInfo"]["HotelName"]
+
+def get_all_rooms(response_dict):
+    return response_dict["RoomStays"]["RoomStay"]
+def get_all_hotels(response_dict):
+    return response_dict["HotelStays"]["HotelStay"]
+
+features = []
+def collect_features(feature):
+    """
+    Adds feature to a list if it's not seen before and returns the list
+    """
+    if not feature in features:
+        features.append(feature)
 
 def print_hotels_info(response_dict):
     """
     Print hotels and rooms counts
     """
 
-    hotels = response_dict["HotelStays"]["HotelStay"]
-    all_rooms = response_dict["RoomStays"]["RoomStay"]
+    hotels = get_all_hotels(response_dict)
+    all_rooms = get_all_rooms(response_dict)
+
+    total_room_count = all_rooms.__len__()
+
+    total_hotel_rooms = 0
 
     for hotel in hotels:
-        hotel_code = hotel["BasicPropertyInfo"]["HotelCode"]
-        hotel_name = hotel["BasicPropertyInfo"]["HotelName"]
+        hotel_code = get_hotel_code(hotel)
+        hotel_name = get_hotel_name(hotel)
         hotel_rooms = get_rooms_of_hotel(hotel_code, all_rooms)
         hotel_rooms_count = hotel_rooms.__len__()
+
+        total_hotel_rooms += hotel_rooms_count
+
         info = f"{hotel_code}: {hotel_name} - Rooms: {hotel_rooms_count}"
+
         print(info)
+        print_rooms_info(hotel_rooms)
+
+    print(f"Total Rooms: {total_room_count}")
+    print(f"Total Hotel Rooms: {total_hotel_rooms}")
+
+def get_header():
+    """
+    Create a new Header type, populate the fields and return it
+    """
+    header = Header()
+    header.version.major = 1
+    header.version.minor = 2
+    header.version.patch = 3
+    header.end_user_wallet_address = "X-columbus13lcv2qp3jl8kkz7hm4uwf5scquvsfnx7q370cg"
+    return header
+
+def get_accommodation_search_response():
+    """
+    Create new AccommodationSearchResponse object and return it
+    """
+    rs = AccommodationSearchResponse()
+    return rs
+
+def unit_from_room(room):
+    """
+    Create a Unit type from room and return it
+    """
+
+    unit = Unit()
+    unit.type = UnitType.UNIT_TYPE_ROOM
+
+    unit.vendor_code = get_room_type_code(room)
+
+    unit.rate_plan = get_room_rate_plan(room)
+    unit.rate_rules.append(get_room_rate_rule(room))
+
+    price_detail = PriceDetail()
+    price_detail.net.currency = Currency.CURRENCY_EUR
+    price_detail.net.net = 508.17
+
+    return unit
+
 
 xml_file = open("example.xml")
 xml_content = xml_file.read()
@@ -69,5 +195,10 @@ root = ET.fromstring(xml_content)
 # Converting the root element of the XML to a cleaner dictionary
 hotel_data_dict_clean = xml_to_dict_with_attributes(root)
 
-print_hotels_info(hotel_data_dict_clean)
+# TESTS
+# print_hotels_info(hotel_data_dict_clean)
+# print(f"Features: {features}")
+
+for room in get_all_rooms(hotel_data_dict_clean)[:1]:
+    print(unit_from_room(room))
 
