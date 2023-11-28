@@ -6,6 +6,10 @@ from collections import defaultdict
 from cmp.services.accommodation.v1alpha1 import *
 from cmp.types.v1alpha1 import *
 
+import logging
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.info('Starting...')
+
 def strip_ns(tag):
     """
     Removes the namespace from the XML tag.
@@ -152,7 +156,11 @@ def get_hotel_area_id(hotel):
 def get_hotel_image(hotel):
     return hotel["BasicPropertyInfo"]["VendorMessages"]["VendorMessage"]["SubSection"]["Paragraph"]["Image"]["text"]
 def get_hotel_stars(hotel):
-    return int(hotel["BasicPropertyInfo"]["Award"]["Rating"].split()[0])
+    try:
+        stars = int(hotel["BasicPropertyInfo"]["Award"]["Rating"].split()[0])
+    except:
+        stars = 0
+    return stars
 def get_hotel_segmentation_list(hotel):
 
     segmentation_list = []
@@ -167,7 +175,7 @@ def get_hotel_segmentation_list(hotel):
         for segmentation in service:
             segmentation_list.append(segmentation["text"])
     else:
-        segmentation_list.append(segmentation["text"])
+        segmentation_list.append(service["text"])
 
     return segmentation_list
 
@@ -223,13 +231,6 @@ def get_header():
     header.end_user_wallet_address = "X-columbus13lcv2qp3jl8kkz7hm4uwf5scquvsfnx7q370cg"
     return header
 
-def get_accommodation_search_response():
-    """
-    Create new AccommodationSearchResponse object and return it
-    """
-    rs = AccommodationSearchResponse()
-    return rs
-
 def unit_from_room(room):
     """
     Create a Unit type from room and return it
@@ -265,7 +266,7 @@ def unit_from_room(room):
     unit.remaining_units = get_room_remaining_units(room)
 
     # We don't have anywhere to put these, so to keep it comparable I put them here
-    unit.remarks = 'Type:22,ID:XXXX,ID_Context:XXXX}'
+    #unit.remarks = 'Type:22,ID:XXXX,ID_Context:XXXX}'
 
     return unit
 
@@ -292,29 +293,98 @@ def property_info_from_hotel(hotel):
 
     return property
 
-xml_file = open("example.xml")
-xml_content = xml_file.read()
-xml_file.close()
+def get_search_option(hotel, all_rooms):
+    """
+    Get a hotel and generate a search option with all the rooms of the hotel
+    """
 
-# Parsing the XML file
-root = ET.fromstring(xml_content)
+    so = SearchOption()
 
-# Converting the root element of the XML to a cleaner dictionary
-hotel_data_dict_clean = xml_to_dict_with_attributes(root)
+    # Set PropertyInfo
+    so.property_info = property_info_from_hotel(hotel)
+
+    # Set Units of the Property
+    hotel_code = get_hotel_code(hotel)
+    hotel_rooms = get_rooms_of_hotel(hotel_code, all_rooms)
+
+    for room in hotel_rooms:
+        so.units.append(unit_from_room(room))
+
+    # Return the search option
+    return so
+
+def get_accommodation_search_response(hotel_data_dict):
+    """
+    Gets the parsed hotel data dict and builds a AccommodationSearchResponse message
+    """
+
+    all_hotels = get_all_hotels(hotel_data_dict)
+    all_rooms = get_all_rooms(hotel_data_dict)
+
+    accommodation_search_response = AccommodationSearchResponse()
+    accommodation_search_response.header = get_header()
+
+    # Search Options
+    for hotel in all_hotels:
+        # Build the search option for the hotel
+        so = get_search_option(hotel, all_rooms)
+        # Append the search option to the options list of the response
+        accommodation_search_response.options.append(so)
+
+    return accommodation_search_response
+
+def write_message_to_file(message, file_name="pb.msg.bin"):
+    """
+    Write the message to a file, serializing to binary
+    """
+    pb_file = open(file_name, "wb")
+    msg_bytes = message.SerializeToString()
+    pb_file.write(msg_bytes)
+    pb_file.close()
+
+### MAIN ###
 
 # TESTS
 # print_hotels_info(hotel_data_dict_clean)
 # print(f"Features: {features}")
 
-for room in get_all_rooms(hotel_data_dict_clean)[:1]:
-    unit = unit_from_room(room)
-    print(unit)
-    print()
-    print("BYTES:", unit.SerializeToString())
-    print("LEN:", len(unit.SerializeToString()))
+# for room in get_all_rooms(hotel_data_dict_clean)[:1]:
+#     unit = unit_from_room(room)
+#     print(unit)
+#     print()
+#     print("BYTES:", unit.SerializeToString())
+#     print("LEN:", len(unit.SerializeToString()))
 
-for hotel in get_all_hotels(hotel_data_dict_clean)[:1]:
-    property = property_info_from_hotel(hotel)
-    print(property)
-    print("BYTES:", property.SerializeToString())
-    print("LEN:", len(property.SerializeToString()))
+# for hotel in get_all_hotels(hotel_data_dict_clean)[:1]:
+#     property = property_info_from_hotel(hotel)
+#     print(property)
+#     print("BYTES:", property.SerializeToString())
+#     print("LEN:", len(property.SerializeToString()))
+
+# Read the example XML file
+logging.info("Reading XML File")
+xml_file = open("example.xml")
+xml_content = xml_file.read()
+xml_file.close()
+logging.info("Reading XML File Done")
+
+# Parse the XML file
+logging.info("Parsing XML")
+root = ET.fromstring(xml_content)
+logging.info("Parsing XML Done")
+
+# Converting the root element of the XML to a cleaner dictionary
+logging.info("Converting XML to Dictionary")
+hotel_data_dict_clean = xml_to_dict_with_attributes(root)
+logging.info("Converting XML to Dictionary Done")
+
+logging.info("Building AccommodationSearchResponse")
+asr = get_accommodation_search_response(hotel_data_dict_clean)
+logging.info("Building AccommodationSearchResponse Done")
+
+#print(asr)
+file_name = "accommodation_search_response_mts_wo_ref.pb.bin"
+
+logging.info(f"Writing file: {file_name}")
+write_message_to_file(asr, file_name)
+logging.info("Writing file done")

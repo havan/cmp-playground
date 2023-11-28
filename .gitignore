@@ -169,3 +169,4 @@ example.xml
 dict.json
 *.b64
 *.gpg
+*.bin
