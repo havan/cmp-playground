@@ -7,7 +7,8 @@ from cmp.services.accommodation.v1alpha1 import *
 from cmp.types.v1alpha1 import *
 
 import logging
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(message)s')
+#logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 logging.info('Starting...')
 
 def strip_ns(tag):
@@ -202,6 +203,8 @@ def print_hotels_info(response_dict):
 
     total_room_count = all_rooms.__len__()
 
+    total_hotels = len(hotels)
+
     total_hotel_rooms = 0
 
     for hotel in hotels:
@@ -217,6 +220,7 @@ def print_hotels_info(response_dict):
         print(info)
         print_rooms_info(hotel_rooms)
 
+    print(f"Total Hotels: {total_hotels}")
     print(f"Total Rooms: {total_room_count}")
     print(f"Total Hotel Rooms: {total_hotel_rooms}")
 
@@ -266,7 +270,7 @@ def unit_from_room(room):
     unit.remaining_units = get_room_remaining_units(room)
 
     # We don't have anywhere to put these, so to keep it comparable I put them here
-    #unit.remarks = 'Type:22,ID:XXXX,ID_Context:XXXX}'
+    unit.remarks = 'Type:22,ID:XXXX,ID_Context:XXXX}'
 
     return unit
 
@@ -383,7 +387,7 @@ asr = get_accommodation_search_response(hotel_data_dict_clean)
 logging.info("Building AccommodationSearchResponse Done")
 
 #print(asr)
-file_name = "accommodation_search_response_mts_wo_ref.pb.bin"
+file_name = "accommodation_search_response_mts.pb.bin"
 
 logging.info(f"Writing file: {file_name}")
 write_message_to_file(asr, file_name)

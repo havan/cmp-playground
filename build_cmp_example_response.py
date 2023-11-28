@@ -23,7 +23,7 @@ unit.beds.append(Bed(type=BedType.BED_TYPE_DOUBLE, count=2))
 unit.vendor_code = "RMSDDB00A0"
 
 # Rate Plan & Rate Rules
-unit.rate_plan = RatePlan.RATE_PLAN_ONE
+unit.rate_plan = ""
 unit.rate_rules.append(RateRule(type = RateRuleType.RATE_RULE_TYPE_NON_REFUNDABLE))
 unit.rate_rules.append(RateRule(type = RateRuleType.RATE_RULE_TYPE_NON_REFUNDABLE))
 

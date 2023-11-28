@@ -170,3 +170,4 @@ dict.json
 *.b64
 *.gpg
 *.bin
+gen/
