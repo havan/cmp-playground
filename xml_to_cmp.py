@@ -45,6 +45,46 @@ def get_room_price_currency(room):
     return room["RoomRates"]["RoomRate"]["Rates"]["Rate"]["Total"]["CurrencyCode"]
 def get_room_rate_plan(room):
     return room["RoomRates"]["RoomRate"]["Rates"]["Rate"]["ChargeType"]
+def get_room_remaining_units(room):
+    return int(room["RoomRates"]["RoomRate"]["NumberOfUnits"])
+
+def get_room_timespan_start(room):
+    return room["TimeSpan"]["Start"]
+def get_room_timespan_end(room):
+    return room["TimeSpan"]["End"]
+def get_room_travel_period(room):
+    start = get_room_timespan_start(room).split("-")
+    end = get_room_timespan_end(room).split("-")
+
+    # Travel Period
+    tp = TravelPeriod(
+            start_date=Date(year=int(start[0]), month=int(start[1]), day=int(start[2])),
+            end_date=Date(year=int(end[0]), month=int(end[1]), day=int(end[2])),
+        )
+
+    return tp
+
+def get_room_travellers(room):
+    guest_age_code = int(room["GuestCounts"]["GuestCount"]["AgeQualifyingCode"])
+    guest_count = int(room["GuestCounts"]["GuestCount"]["Count"])
+
+    travellers = []
+
+    for i in range(guest_count):
+        traveller = Traveller()
+        if guest_age_code == 10:
+            # Check this
+            traveller.type = TravellerType.TRAVELLER_TYPE_ADULT
+        else:
+            # Default should probably be adult
+            traveller.type = TravellerType.TRAVELLER_TYPE_ADULT
+        travellers.append(traveller)
+
+    return travellers
+
+def get_room_guest(room):
+    return room["TimeSpan"]["End"]
+
 def get_room_rate_feature(room):
     rate_feature = room["RoomRates"]["RoomRate"]["Features"]["Feature"]["Description"]["Text"]["text"]
     collect_features(rate_feature)
@@ -105,6 +145,31 @@ def get_hotel_code(hotel):
     return hotel["BasicPropertyInfo"]["HotelCode"]
 def get_hotel_name(hotel):
     return hotel["BasicPropertyInfo"]["HotelName"]
+def get_hotel_code_context(hotel):
+    return int(hotel["BasicPropertyInfo"]["HotelCodeContext"])
+def get_hotel_area_id(hotel):
+    return hotel["BasicPropertyInfo"]["AreaID"]
+def get_hotel_image(hotel):
+    return hotel["BasicPropertyInfo"]["VendorMessages"]["VendorMessage"]["SubSection"]["Paragraph"]["Image"]["text"]
+def get_hotel_stars(hotel):
+    return int(hotel["BasicPropertyInfo"]["Award"]["Rating"].split()[0])
+def get_hotel_segmentation_list(hotel):
+
+    segmentation_list = []
+
+    if "Service" in hotel["BasicPropertyInfo"].keys():
+        service = hotel["BasicPropertyInfo"]["Service"]
+    else:
+        # Return empty string if no service element
+        return ""
+
+    if isinstance(service, list):
+        for segmentation in service:
+            segmentation_list.append(segmentation["text"])
+    else:
+        segmentation_list.append(segmentation["text"])
+
+    return segmentation_list
 
 def get_all_rooms(response_dict):
     return response_dict["RoomStays"]["RoomStay"]
@@ -182,8 +247,50 @@ def unit_from_room(room):
     price_detail.net.currency = Currency.CURRENCY_EUR
     price_detail.net.net = 508.17
 
+    # Get copy of the price_detail object as the prices are the same in xml
+    base_price = PriceDetail.FromString(price_detail.SerializeToString())
+
+    # Append base price to price detail of Unit
+    price_detail.breakdown.append(base_price)
+    unit.price_detail = price_detail
+
+    # Travel Period
+    tp = get_room_travel_period(room)
+    unit.travel_period = tp
+
+    # Travellers - GuestCounts in xml
+    unit.travellers.extend(get_room_travellers(room))
+
+    # Remaining units
+    unit.remaining_units = get_room_remaining_units(room)
+
+    # We don't have anywhere to put these, so to keep it comparable I put them here
+    unit.remarks = 'Type:22,ID:XXXX,ID_Context:XXXX}'
+
     return unit
 
+def property_info_from_hotel(hotel):
+
+    property = PropertyInfo()
+
+    property.property_name = get_hotel_name(hotel)
+    property.city_or_resort = get_hotel_area_id(hotel)
+
+    # Put the hotel code to GIATA ID for now
+    property.giata_id = get_hotel_code(hotel)
+
+    property.goal_id = get_hotel_code_context(hotel)
+
+    # Put image to region for now
+    property.region = get_hotel_image(hotel)
+
+    # And put the stars into the country type
+    property.country = get_hotel_stars(hotel)
+
+    # PropertyInfo don't have service facts for now, use status
+    property.status = str(get_hotel_segmentation_list(hotel))
+
+    return property
 
 xml_file = open("example.xml")
 xml_content = xml_file.read()
@@ -200,5 +307,14 @@ hotel_data_dict_clean = xml_to_dict_with_attributes(root)
 # print(f"Features: {features}")
 
 for room in get_all_rooms(hotel_data_dict_clean)[:1]:
-    print(unit_from_room(room))
+    unit = unit_from_room(room)
+    print(unit)
+    print()
+    print("BYTES:", unit.SerializeToString())
+    print("LEN:", len(unit.SerializeToString()))
 
+for hotel in get_all_hotels(hotel_data_dict_clean)[:1]:
+    property = property_info_from_hotel(hotel)
+    print(property)
+    print("BYTES:", property.SerializeToString())
+    print("LEN:", len(property.SerializeToString()))
